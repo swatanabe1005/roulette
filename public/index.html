@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ルーレットアプリ</title>
+    <style>
+        /* --- CSSスタイル --- */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column; /* 縦並びに変更 */
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+        }
+        /* ルーレットと針をまとめるコンテナ */
+        .roulette-container {
+            position: relative;
+            width: 350px;
+            height: 350px;
+            margin-bottom: 20px;
+        }
+        /* ルーレットの針 */
+        #pointer {
+            position: absolute;
+            top: -20px; /* Canvasの上端より少し上にはみ出す */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 40px solid #dc3545; /* 針の色 */
+            z-index: 10;
+        }
+        #rouletteCanvas {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.1s ease-out; /* JavaScriptで停止位置を微調整するため */
+        }
+        #spinButton {
+            font-size: 1.2rem;
+            padding: 12px 25px;
+            margin: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        #spinButton:hover {
+            background-color: #0056b3;
+        }
+        #spinButton:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            min-height: 2.0rem; /* 結果表示エリアの高さ確保 */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>運命のルーレット</h1>
+
+    <div class="roulette-container">
+        <div id="pointer"></div>
+        <canvas id="rouletteCanvas" width="350" height="350"></canvas>
+    </div>
+
+    <button id="spinButton">回す</button>
+    <div id="result"></div>
+
+    <script>
+        // --- JavaScriptロジック ---
+
+        // ★★★ ルーレットの項目をここで編集 ★★★
+        const items = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
+        const colors = ["#FF6347", "#FFA500", "#FFD700", "#98FB98", "#87CEEB", "#4682B4", "#9370DB"];
+
+        const canvas = document.getElementById('rouletteCanvas');
+        const ctx = canvas.getContext('2d');
+        const spinButton = document.getElementById('spinButton');
+        const resultDisplay = document.getElementById('result');
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = canvas.width / 2 - 10; // 少し余白
+
+        let currentRotation = 0; // 現在の回転角度（ラジアン）
+        let isSpinning = false;
+        const itemArc = (Math.PI * 2) / items.length; // 各項目の角度
+
+        /**
+         * イージング関数 (徐々に遅くなる)
+         * t: 進行度 (0.0 〜 1.0)
+         */
+        function easeOutCubic(t) {
+            return 1 - Math.pow(1 - t, 4);
+        }
+
+        /**
+         * ルーレットを描画する関数
+         */
+        function drawRoulette() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(centerX, centerY); // 中心を座標(0,0)に移動
+            ctx.rotate(currentRotation); // Canvas全体を回転
+
+            items.forEach((item, i) => {
+                const startAngle = i * itemArc;
+                const endAngle = (i + 1) * itemArc;
+
+                // 1. 扇形を描画
+                ctx.beginPath();
+                ctx.moveTo(0, 0); // 中心から
+                ctx.arc(0, 0, radius, startAngle, endAngle);
+                ctx.closePath();
+                
+                // 色を交互または配列から設定
+                ctx.fillStyle = colors[i % colors.length] || (i % 2 === 0 ? '#f8f8f8' : '#e0e0e0');
+                ctx.fill();
+                ctx.stroke();
+
+                // 2. テキストを描画
+                ctx.save();
+                ctx.fillStyle = "#333";
+                ctx.font = "bold 16px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                
+                // テキストを扇形の中心に回転させて配置
+                const textAngle = startAngle + itemArc / 2;
+                ctx.rotate(textAngle);
+                ctx.fillText(item, radius * 0.6, 0); // 中心から60%の位置に描画
+                ctx.restore();
+            });
+
+            ctx.restore(); // translateの状態を元に戻す
+        }
+
+        /**
+         * 回転ボタンが押されたときの処理
+         */
+        function startSpin() {
+            if (isSpinning) return;
+            isSpinning = true;
+            spinButton.disabled = true;
+            resultDisplay.textContent = "回転中...";
+
+            const spinDuration = 5000; // 5秒
+            const randomSpin = Math.random() * (Math.PI * 2) * 5; // 0〜5回転
+            const targetRotation = currentRotation + (Math.PI * 2) * 10 + randomSpin; // 最低10回転 + ランダム
+            
+            const startTime = performance.now();
+            const startRotation = currentRotation;
+
+            function animateSpin(timestamp) {
+                const elapsed = timestamp - startTime;
+                const progress = Math.min(elapsed / spinDuration, 1); // 進行度 (0.0 〜 1.0)
+                const easedProgress = easeOutCubic(progress);
+
+                currentRotation = startRotation + (targetRotation - startRotation) * easedProgress;
+                drawRoulette();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateSpin);
+                } else {
+                    // アニメーション終了
+                    currentRotation = targetRotation;
+                    drawRoulette(); // 最終位置に正確に描画
+                    finishSpin();
+                }
+            }
+
+            requestAnimationFrame(animateSpin);
+        }
+
+        /**
+         * 回転終了時の処理
+         */
+        function finishSpin() {
+            isSpinning = false;
+            spinButton.disabled = false;
+
+            // 最終的な停止角度を正規化 (0 〜 2PI)
+            const normalizedAngle = (currentRotation % (Math.PI * 2));
+            
+            // 針は真上 ( -PI/2 または 3PI/2 の位置) にあると考える
+            // 0ラジアンは右側なので、そこからどれだけ回ったかを計算
+            // (2PI - normalizedAngle) で時計回りの角度を反時計回りに変換し、
+            // さらに PI/2 (90度) を足して、真上を基準にする
+            const pointerAngle = (Math.PI * 2 - normalizedAngle + (Math.PI / 2)) % (Math.PI * 2);
+
+            // どの項目に止まったか計算
+            const selectedIndex = Math.floor(pointerAngle / itemArc);
+            
+            resultDisplay.textContent = `結果: ${items[selectedIndex]}`;
+        }
+
+        // --- 初期化 ---
+        spinButton.addEventListener('click', startSpin);
+        drawRoulette(); // 初回描画
+    </script>
+
+</body>
+</html>
